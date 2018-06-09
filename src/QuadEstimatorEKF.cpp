@@ -84,39 +84,53 @@ void QuadEstimatorEKF::UpdateFromIMU(V3F accel, V3F gyro)
 	// HINTS:
 	//  - there are several ways to go about this, including:
 	//    1) create a rotation matrix based on your current Euler angles, integrate that, convert back to Euler angles
-	//    OR 
-	//    2) use the Quaternion<float> class, which has a handy FromEuler123_RPY function for creating a quaternion from Euler Roll/PitchYaw
-	//       (Quaternion<float> also has a IntegrateBodyRate function, though this uses quaternions, not Euler angles)
+//    OR 
+//    2) use the Quaternion<float> class, which has a handy FromEuler123_RPY function for creating a quaternion from Euler Roll/PitchYaw
+//       (Quaternion<float> also has a IntegrateBodyRate function, though this uses quaternions, not Euler angles)
 
-	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-	// SMALL ANGLE GYRO INTEGRATION:
-	// (replace the code below)
-	// make sure you comment it out when you add your own code -- otherwise e.g. you might integrate yaw twice
+////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+// SMALL ANGLE GYRO INTEGRATION:
+// (replace the code below)
+// make sure you comment it out when you add your own code -- otherwise e.g. you might integrate yaw twice
 
+// Create 3x3 matrix to convert body fixed angular rate measurements from gyro into the derivitive of Euler angles
 
+float cosPhi = cos(rollEst);
+float sinPhi = sin(rollEst);
+float tanTheta = tan(pitchEst);
+float secTheta = 1.0 / cos(pitchEst);
 
+Mat3x3F R;
+R(0, 0) = 1.0;
+R(0, 1) = sinPhi * tanTheta;
+R(0, 2) = cosPhi * tanTheta;
+R(1, 0) = 0.0;
+R(1, 1) = cosPhi;
+R(1, 2) = -sinPhi;
+R(2, 0) = 0.0;
+R(2, 1) = sinPhi * secTheta;
+R(2, 2) = cosPhi * secTheta;
 
+V3F EulerRates = R * gyro;
 
+float predictedPitch = pitchEst + dtIMU * EulerRates.y;
+float predictedRoll = rollEst + dtIMU * EulerRates.x;
+ekfState(6) = ekfState(6) + dtIMU * EulerRates.z;	// yaw
 
-	float predictedPitch = pitchEst + dtIMU * gyro.y;
-	float predictedRoll = rollEst + dtIMU * gyro.x;
-	ekfState(6) = ekfState(6) + dtIMU * gyro.z;	// yaw
+// since yaw is periodic force yaw state to stay in the range  -pi .. pi
+ekfState(6) = fmodf((ekfState(6) + M_PI), (2.0f * M_PI)) - M_PI;
 
-	// normalize yaw to -pi .. pi
-	if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;
-	if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;
+/////////////////////////////// END STUDENT CODE ////////////////////////////
 
-	/////////////////////////////// END STUDENT CODE ////////////////////////////
+// CALCULATE UPDATE
+accelRoll = atan2f(accel.y, accel.z);
+accelPitch = atan2f(-accel.x, 9.81f);
 
-	// CALCULATE UPDATE
-	accelRoll = atan2f(accel.y, accel.z);
-	accelPitch = atan2f(-accel.x, 9.81f);
+// FUSE INTEGRATION AND UPDATE
+rollEst = attitudeTau / (attitudeTau + dtIMU) * (predictedRoll)+dtIMU / (attitudeTau + dtIMU) * accelRoll;
+pitchEst = attitudeTau / (attitudeTau + dtIMU) * (predictedPitch)+dtIMU / (attitudeTau + dtIMU) * accelPitch;
 
-	// FUSE INTEGRATION AND UPDATE
-	rollEst = attitudeTau / (attitudeTau + dtIMU) * (predictedRoll)+dtIMU / (attitudeTau + dtIMU) * accelRoll;
-	pitchEst = attitudeTau / (attitudeTau + dtIMU) * (predictedPitch)+dtIMU / (attitudeTau + dtIMU) * accelPitch;
-
-	lastGyro = gyro;
+lastGyro = gyro;
 }
 
 void QuadEstimatorEKF::UpdateTrueError(V3F truePos, V3F trueVel, Quaternion<float> trueAtt)
@@ -167,6 +181,16 @@ VectorXf QuadEstimatorEKF::PredictState(VectorXf curState, float dt, V3F accel, 
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+	V3F accel_NED = attitude.Rotate_BtoI(accel) + V3F(0.0, 0.0, -9.81);
+
+	for (uint8_t k = 0; k < 3; k++)
+	{
+		// integrate velocity states to update position states
+		predictedState[k] += dt * curState[k + 3];
+
+		// integrate NED acceleration with gracity removed to update velocity states
+		predictedState[k + 3] += dt * accel_NED[k];
+	}
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -194,6 +218,21 @@ MatrixXf QuadEstimatorEKF::GetRbgPrime(float roll, float pitch, float yaw)
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+	float cphi = cos(rollEst);
+	float sphi = sin(rollEst);
+	float ctheta = cos(pitchEst);
+	float stheta = sin(pitchEst);
+	float cpsi = cos(ekfState[6]);
+	float spsi = sin(ekfState[6]);
+
+	RbgPrime(0, 0) = -ctheta * spsi;
+	RbgPrime(1, 0) = ctheta * cpsi;
+
+	RbgPrime(0, 0) = -sphi * stheta * spsi - cphi * cpsi;
+	RbgPrime(1, 0) = sphi * stheta * cpsi - cphi * spsi;
+
+	RbgPrime(0, 0) = -cphi * stheta * spsi + sphi * cpsi;
+	RbgPrime(1, 0) = cphi * stheta * cpsi + sphi * spsi;
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -240,6 +279,25 @@ void QuadEstimatorEKF::Predict(float dt, V3F accel, V3F gyro)
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+	MatrixXf tmp(3, 1);
+	tmp(0, 0) = accel.x;
+	tmp(1, 0) = accel.y;
+	tmp(2, 0) = accel.z;
+	tmp = RbgPrime * tmp;
+
+	for (uint8_t k = 0; k < 7; k++)
+	{
+		gPrime(k, k) = 1.0;
+
+		if (k < 3)
+		{
+			gPrime(k, k + 3) = dt;
+			gPrime(k + 3, 6) = tmp(k) * dt;
+		}
+	}
+
+	// update covariance from  prediction
+	ekfCov = gPrime * ekfCov * gPrime.transpose() + Q;
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
