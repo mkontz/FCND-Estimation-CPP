@@ -285,7 +285,33 @@ float QuadControl::YawControl(float yawCmd, float yaw)
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
-	yawRateCmd = kpYaw * (fmodf(((yawCmd - yaw) + M_PI), (2.0f * M_PI)) - M_PI);
+	// Note: I used this line successfully for the control projects, but it appears that fmodf is broken in this environment
+	// yawRateCmd = kpYaw * (fmodf(((yawCmd - yaw) + float(M_PI)), (2.0f * float(M_PI))) - float(M_PI));
+
+	float error = yawCmd - yaw;
+	float pi = float(M_PI);
+
+	// since yaw is periodic force yaw state to stay in the range  -pi .. pi
+	if (abs(error) > pi)
+	{
+		int cnt = 0;
+		while ((cnt < 10) && (error < -pi))
+		{
+			error += 2.0f * pi;
+			cnt++;
+		}
+		while ((cnt < 10) && (error > pi))
+		{
+			error -= 2.0f * pi;
+			cnt++;
+		}
+
+		assert(abs(error) < pi);
+	}
+
+	yawRateCmd = kpYaw * error;
+
+
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
   

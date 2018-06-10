@@ -98,7 +98,7 @@ void QuadEstimatorEKF::UpdateFromIMU(V3F accel, V3F gyro)
 float cosPhi = cos(rollEst);
 float sinPhi = sin(rollEst);
 float tanTheta = tan(pitchEst);
-float secTheta = 1.0 / cos(pitchEst);
+float secTheta = 1.0f / cos(pitchEst);
 
 Mat3x3F R;
 R(0, 0) = 1.0;
@@ -115,10 +115,30 @@ V3F EulerRates = R * gyro;
 
 float predictedPitch = pitchEst + dtIMU * EulerRates.y;
 float predictedRoll = rollEst + dtIMU * EulerRates.x;
-ekfState(6) = ekfState(6) + dtIMU * EulerRates.z;	// yaw
+ekfState(6) += dtIMU * EulerRates.z;	// yaw
 
 // since yaw is periodic force yaw state to stay in the range  -pi .. pi
-ekfState(6) = fmodf((ekfState(6) + M_PI), (2.0f * M_PI)) - M_PI;
+
+// Note: the following line should do what the following lines do,.....but the fmodf function isn't working properly
+//ekfState(6) = fmodf((ekfState(6) + M_PI), (2.0f * M_PI)) - M_PI;
+
+float pi = float(M_PI);
+if (abs(ekfState(6)) > pi)
+{
+	int cnt = 0;
+	while ((cnt < 10) && (ekfState(6) < -pi))
+	{
+		ekfState(6) += 2.0f * pi;
+		cnt++;
+	}
+	while ((cnt < 10) && (ekfState(6) > pi))
+	{
+		ekfState(6) -= 2.0f * pi;
+		cnt++;
+	}
+
+	assert(abs(ekfState(6)) < M_PI);
+}
 
 /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -181,7 +201,7 @@ VectorXf QuadEstimatorEKF::PredictState(VectorXf curState, float dt, V3F accel, 
 
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
-	V3F accel_NED = attitude.Rotate_BtoI(accel) + V3F(0.0, 0.0, -9.81);
+	V3F accel_NED = attitude.Rotate_BtoI(accel) + V3F(0.0, 0.0, -9.81f);
 
 	for (uint8_t k = 0; k < 3; k++)
 	{
@@ -336,6 +356,8 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
 	MatrixXf hPrime(1, QUAD_EKF_NUM_STATES);
 	hPrime.setZero();
 
+	float pi = float(M_PI);
+
 	// MAGNETOMETER UPDATE
 	// Hints: 
 	//  - Your current estimated yaw can be found in the state vector: ekfState(6)
@@ -344,10 +366,56 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
 	//  - The magnetomer measurement covariance is available in member variable R_Mag
 	////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+	hPrime(6) = 1.0;
+	
+	
+	// setting zFromX(0) to zero effectively makes z the error and not the measurement
+	zFromX(0) = ekfState(6);
+
+	// The following lines should be able to be replace with a single lines using fmodf, but fmodf if broken in the environment
+	
+	if (abs(z(0) - zFromX(0)) > pi)
+	{
+		int cnt = 0;
+		float error = z(0) - zFromX(0);
+		while ((cnt < 10) && (error < -pi))
+		{
+			error += 2.0f * pi;
+			cnt++;
+		}
+		while ((cnt < 10) && (error > pi))
+		{
+			error -= 2.0f * pi;
+			cnt++;
+		}
+
+		z(0) = zFromX(0) + error;
+
+		assert(abs(zFromX(0) - z(0)) < M_PI);
+	}
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
 
 	Update(z, hPrime, R_Mag, zFromX);
+
+	// since yaw is periodic force yaw state to stay in the range  -pi .. pi
+	// The following lines should be able to be replace with a single lines using fmodf, but fmodf if broken in the environment
+	if (abs(ekfState(6)) > pi)
+	{
+		int cnt = 0;
+		while ((cnt < 10) && (ekfState(6) < -pi))
+		{
+			ekfState(6) += 2.0f * pi;
+			cnt++;
+		}
+		while ((cnt < 10) && (ekfState(6) > pi))
+		{
+			ekfState(6) -= 2.0f * pi;
+			cnt++;
+		}
+
+		assert(abs(ekfState(6)) < M_PI);
+	}
 }
 
 // Execute an EKF update step
