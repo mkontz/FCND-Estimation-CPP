@@ -137,7 +137,7 @@ if (abs(ekfState(6)) > pi)
 		cnt++;
 	}
 
-	assert(abs(ekfState(6)) < M_PI);
+	// assert(abs(ekfState(6)) < M_PI);
 }
 
 /////////////////////////////// END STUDENT CODE ////////////////////////////
@@ -397,7 +397,7 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
 
 		z(0) = zFromX(0) + error;
 
-		assert(abs(zFromX(0) - z(0)) < M_PI);
+		// assert(abs(zFromX(0) - z(0)) < M_PI);
 	}
 
 	/////////////////////////////// END STUDENT CODE ////////////////////////////
@@ -420,7 +420,7 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
 			cnt++;
 		}
 
-		assert(abs(ekfState(6)) < M_PI);
+		// assert(abs(ekfState(6)) < M_PI);
 	}
 }
 
